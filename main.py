@@ -16,6 +16,7 @@ from descriptors.open_clip_lion_image import open_clip_lion_image
 from descriptors.dino_v2 import dino_v2
 from descriptors.ocr import ocr
 from descriptors.emotions import emotions
+from descriptors.face_recognition import face_recognition
 
 from descriptors.asr import asr_whisper
 
@@ -27,6 +28,7 @@ def register_modules():
     app.register_blueprint(ocr)
     app.register_blueprint(asr_whisper)
     app.register_blueprint(emotions)
+    app.register_blueprint(face_recognition)
 
 
 def entrypoint(host, port, args):
