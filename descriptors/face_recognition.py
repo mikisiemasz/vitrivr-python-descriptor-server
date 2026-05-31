@@ -1,11 +1,8 @@
 import base64
 import json
-import tempfile
-from io import BytesIO
 
 import cv2
 import numpy as np
-from PIL import Image
 from apiflask import APIBlueprint
 from flask import request, jsonify
 from insightface.app import FaceAnalysis
@@ -26,13 +23,16 @@ def _decode_image(data: str) -> np.ndarray:
 
 @face_recognition.post("/extract/face_embedding")
 @face_recognition.doc(
-    summary="Extract per-face ArcFace embeddings. "
-            "Returns a JSON array of 512-d vectors, one per detected face. "
+    summary="Extract per-face ArcFace embeddings with bounding box and quality score. "
+            "Returns a JSON array of objects, one per detected face. "
             "Empty array if no faces detected."
 )
 def extract_face_embedding():
     """
-    Returns: JSON array of arrays, where each inner array is a 512-d face embedding.
+    Returns a JSON array where each element contains:
+      - embedding: 512-d normalized ArcFace vector
+      - bbox:      [x1, y1, x2, y2] bounding box in pixels
+      - score:     detection confidence score
     """
     data = request.form.get('data', '')
     if not data or "base64," not in data:
@@ -45,14 +45,71 @@ def extract_face_embedding():
         if not faces:
             return jsonify([]), 200
 
-        # One embedding per face
         results = []
         for f in faces:
             emb = f.embedding / np.linalg.norm(f.embedding)
-            results.append(emb.tolist())
+            results.append({
+                "embedding": emb.tolist(),
+                "bbox": f.bbox.tolist(),
+                "score": float(f.det_score),
+            })
 
         return jsonify(results), 200
 
     except Exception as e:
         print(f"[ERROR] face_embedding failed: {e}")
         return jsonify([]), 200
+
+
+@face_recognition.post("/cluster/face_embeddings")
+@face_recognition.doc(
+    summary="Cluster a batch of face embeddings using HDBSCAN. "
+            "Returns integer cluster labels (−1 = noise) aligned with the input list."
+)
+def cluster_face_embeddings():
+    """
+    Request JSON body:
+      {
+        "embeddings":          [[...512 floats...], ...],
+        "detection_ids":       ["uuid1", "uuid2", ...],   // optional, echoed back
+        "min_cluster_size":    5,
+        "min_samples":         3,
+        "min_gallery_cluster_size": 10
+      }
+
+    Response:
+      {
+        "labels":    [0, -1, 1, 0, ...],
+        "n_clusters": <int>
+      }
+    """
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+        embeddings_raw = body.get("embeddings", [])
+        min_cluster_size = int(body.get("min_cluster_size", 5))
+        min_samples = int(body.get("min_samples", 3))
+
+        if not embeddings_raw:
+            return jsonify({"labels": [], "n_clusters": 0}), 200
+
+        X = np.array(embeddings_raw, dtype=np.float32)
+
+        # Normalise rows (caller should already normalise, but be defensive)
+        norms = np.linalg.norm(X, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        X = X / norms
+
+        from sklearn.cluster import HDBSCAN
+        clusterer = HDBSCAN(
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+            metric="euclidean",
+        )
+        labels = clusterer.fit_predict(X).tolist()
+        n_clusters = len(set(l for l in labels if l >= 0))
+
+        return jsonify({"labels": labels, "n_clusters": n_clusters}), 200
+
+    except Exception as e:
+        print(f"[ERROR] cluster_face_embeddings failed: {e}")
+        return jsonify({"error": str(e)}), 500
