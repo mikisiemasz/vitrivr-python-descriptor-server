@@ -17,6 +17,7 @@ from descriptors.dino_v2 import dino_v2
 from descriptors.ocr import ocr
 from descriptors.emotions import emotions
 from descriptors.face_recognition import face_recognition
+from descriptors.face_tracking import face_tracking
 
 from descriptors.asr import asr_whisper
 
@@ -29,6 +30,7 @@ def register_modules():
     app.register_blueprint(asr_whisper)
     app.register_blueprint(emotions)
     app.register_blueprint(face_recognition)
+    app.register_blueprint(face_tracking)
 
 
 def entrypoint(host, port, args):
