@@ -20,3 +20,4 @@ librosa>=0.10.0
 numba>=0.58.0
 insightface>=0.7.3
 onnxruntime-gpu>=1.16.0
+facenet-pytorch>=2.6.0

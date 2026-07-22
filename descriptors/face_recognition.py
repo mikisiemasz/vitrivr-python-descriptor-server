@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 
 import cv2
 import numpy as np
@@ -165,6 +166,16 @@ def cluster_face_embeddings():
         embeddings_raw = body.get("embeddings", [])
         min_cluster_size = int(body.get("min_cluster_size", 5))
         min_samples = int(body.get("min_samples", 3))
+        # 'eom' picks the most *stable* condensed-tree nodes, which at corpus scale merges
+        # every identity reachable through low-density bridge faces into one mega-cluster.
+        # 'leaf' selects the finest granularity instead. Per-request override wins; the
+        # HDBSCAN_SELECTION env var lets engine builds that don't send the field opt in.
+        selection = str(
+            body.get("cluster_selection_method")
+            or os.environ.get("HDBSCAN_SELECTION", "eom")
+        ).lower()
+        if selection not in ("eom", "leaf"):
+            return jsonify({"error": f"invalid cluster_selection_method '{selection}'"}), 400
 
         if not embeddings_raw:
             return jsonify({"labels": [], "n_clusters": 0}), 200
@@ -181,6 +192,7 @@ def cluster_face_embeddings():
             min_cluster_size=min_cluster_size,
             min_samples=min_samples,
             metric="euclidean",
+            cluster_selection_method=selection,
         )
         labels = clusterer.fit_predict(X).tolist()
         n_clusters = len(set(l for l in labels if l >= 0))
